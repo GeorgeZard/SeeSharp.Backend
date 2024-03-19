@@ -16,8 +16,8 @@ builder.Services
     .AddGraphQLServices();
 
 
-builder.Host.UseSerilog((context, configuration) =>
-    configuration.ReadFrom.Configuration(context.Configuration));
+//builder.Host.UseSerilog((context, configuration) =>
+//    configuration.ReadFrom.Configuration(context.Configuration));
 
 var app = builder.Build();
 
@@ -30,8 +30,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("CorsPolicy");
 
-// Allow httprequest logs in Serilog
-app.UseSerilogRequestLogging();
+//// Allow httprequest logs in Serilog
+//app.UseSerilogRequestLogging();
 
 app.UseApiVersioning();
 
