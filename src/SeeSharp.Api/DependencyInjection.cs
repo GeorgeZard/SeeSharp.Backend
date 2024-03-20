@@ -3,9 +3,11 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Versioning;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using SeeSharp.Application.Common.Interfaces;
 using SeeSharp.Domain.Models;
+using SeeSharp.Infrastructure.DbContexts;
 using SeeSharp.Infrastructure.Identity;
 using System.Text;
 
@@ -13,84 +15,93 @@ namespace SeeSharp.Infrastructure;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddApiServices(this IServiceCollection services, IConfiguration configuration)
-    {
-        services.AddApiVersioning(options =>
-        {
-            options.DefaultApiVersion = new Microsoft.AspNetCore.Mvc.ApiVersion(1, 0);
-            options.AssumeDefaultVersionWhenUnspecified = true;
-            options.ReportApiVersions = true;
-            options.ApiVersionReader = new MediaTypeApiVersionReader("v");
-            options.ApiVersionReader = ApiVersionReader.Combine(
-                new UrlSegmentApiVersionReader()
-            );
-        });
+	public static IServiceCollection AddApiServices(this IServiceCollection services, IConfiguration configuration)
+	{
+		services.AddApiVersioning(options =>
+		{
+			options.DefaultApiVersion = new Microsoft.AspNetCore.Mvc.ApiVersion(1, 0);
+			options.AssumeDefaultVersionWhenUnspecified = true;
+			options.ReportApiVersions = true;
+			options.ApiVersionReader = new MediaTypeApiVersionReader("v");
+			options.ApiVersionReader = ApiVersionReader.Combine(
+				new UrlSegmentApiVersionReader()
+			);
+		});
 
-        services.AddCors(opt =>
-        {
-            opt.AddPolicy(name: "CorsPolicy", builder =>
-            {
-                builder.WithOrigins("http://localhost:4200", "http://localhost:5224", "https://localhost:4200")
-                    .AllowAnyHeader()
-                    .AllowAnyMethod()
-                    .AllowCredentials();
-            });
-        });
+		services.AddCors(opt =>
+		{
+			opt.AddPolicy(name: "CorsPolicy", builder =>
+			{
+				builder.WithOrigins("http://localhost:4200", "http://localhost:5224", "https://localhost:4200")
+					.AllowAnyHeader()
+					.AllowAnyMethod()
+					.AllowCredentials();
+			});
+		});
 
-        AddAuthenticationAndAuthorization(services, configuration);
+		AddAuthenticationAndAuthorization(services, configuration);
 
-        services.AddAuthentication();
+		services.AddAuthentication();
 
-        services.AddHttpContextAccessor();
+		services.AddHttpContextAccessor();
 
-        services.AddScoped<IJwtUtils, JwtUtils>();
-        services.AddScoped<SignInManager<ApplicationUser>>();
+		services.AddScoped<IJwtUtils, JwtUtils>();
+		services.AddScoped<SignInManager<ApplicationUser>>();
+		var connectionString = configuration.GetConnectionString("DefaultConnection");
 
-        return services;
-    }
+		Guard.Against.Null(connectionString, message:
+		"Connection string 'DefaultConnection' not found.");
 
-    private static void AddAuthenticationAndAuthorization(IServiceCollection services, IConfiguration configuration)
-    {
-        // Add Jwt Token Options
-        var jwtSettings = Guard.Against.Null(configuration.GetSection("JwtOptions"));
-        var googleAuthSettings = Guard.Against.Null(configuration.GetSection("GoogleAuthOptions"));
+		services.AddScoped<IApplicationDbContext, ApplicationDbContext>();
 
-        var secret = Guard.Against.NullOrEmpty(jwtSettings.GetValue<string>("Secret"));
-        var issuer = Guard.Against.NullOrEmpty(jwtSettings.GetValue<string>("Issuer"));
-        var audience = Guard.Against.NullOrEmpty(jwtSettings.GetValue<string>("Audience"));
+		// Add MSSQL DB Context
+		services.AddDbContext<ApplicationDbContext>(options =>
+			options.UseSqlServer(connectionString));
+		return services;
+	}
 
-        var key = Encoding.ASCII.GetBytes(secret);
+	private static void AddAuthenticationAndAuthorization(IServiceCollection services, IConfiguration configuration)
+	{
+		// Add Jwt Token Options
+		var jwtSettings = Guard.Against.Null(configuration.GetSection("JwtOptions"));
+		var googleAuthSettings = Guard.Against.Null(configuration.GetSection("GoogleAuthOptions"));
 
-        services.AddAuthentication(options =>
-        {
-            options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-            options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-        }).AddJwtBearer(x =>
-        {
-            x.TokenValidationParameters = new TokenValidationParameters
-            {
-                ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new SymmetricSecurityKey(key),
-                ValidateIssuer = true,
-                ValidIssuer = issuer,
-                ValidateAudience = true,
-                ValidAudience = audience
-            };
-        });
+		var secret = Guard.Against.NullOrEmpty(jwtSettings.GetValue<string>("Secret"));
+		var issuer = Guard.Against.NullOrEmpty(jwtSettings.GetValue<string>("Issuer"));
+		var audience = Guard.Against.NullOrEmpty(jwtSettings.GetValue<string>("Audience"));
 
-        services.AddAuthorization(options =>
-        {
-            options.AddPolicy("Default", new AuthorizationPolicyBuilder()
-                .AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme)
-                .RequireAuthenticatedUser()
-                .Build());
+		var key = Encoding.ASCII.GetBytes(secret);
 
-            options.AddPolicy("Administrator", new AuthorizationPolicyBuilder()
-                .RequireRole("Administrator")
-                .AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme)
-                .RequireAuthenticatedUser()
-                .Build());
-        });
-    }
+		services.AddAuthentication(options =>
+		{
+			options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+			options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+		}).AddJwtBearer(x =>
+		{
+			x.TokenValidationParameters = new TokenValidationParameters
+			{
+				ValidateIssuerSigningKey = true,
+				IssuerSigningKey = new SymmetricSecurityKey(key),
+				ValidateIssuer = true,
+				ValidIssuer = issuer,
+				ValidateAudience = true,
+				ValidAudience = audience
+			};
+		});
+
+		services.AddAuthorization(options =>
+		{
+			options.AddPolicy("Default", new AuthorizationPolicyBuilder()
+				.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme)
+				.RequireAuthenticatedUser()
+				.Build());
+
+			options.AddPolicy("Administrator", new AuthorizationPolicyBuilder()
+				.RequireRole("Administrator")
+				.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme)
+				.RequireAuthenticatedUser()
+				.Build());
+		});
+	}
 }
 
